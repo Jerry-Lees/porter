@@ -81,7 +81,7 @@ class PorterApp(App):
             self._switch_pane()
         elif event.character == ":":
             event.stop()
-            self._active_pane().open_jump_bar()
+            self.action_jump()
 
     # ── Actions ────────────────────────────────────────────────────────────
 
