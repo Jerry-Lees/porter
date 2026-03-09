@@ -8,14 +8,17 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Label
 
-from porter.fs.local import listdir
+from porter.fs.archive import ArchiveFilesystem
+from porter.fs.base import Filesystem
+from porter.fs.local import LocalFilesystem
 from porter.models.entry import FileEntry
 from porter.widgets.file_table import FileTable
 
+_LOCAL = LocalFilesystem()
+
 
 class FilePane(Widget):
-    """Container: path header + file table.  Never directly focused (can_focus=False).
-    The FileTable inside takes focus."""
+    """Container: path header + file table.  Supports local and SFTP backends."""
 
     can_focus = False
 
@@ -42,12 +45,13 @@ class FilePane(Widget):
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._fs: Filesystem = _LOCAL
         self._cwd: Path = start_path or Path.home()
         self._show_hidden: bool = False
         self._history: list[Path] = []
 
     def compose(self) -> ComposeResult:
-        yield Label(str(self._cwd), id="path-header")
+        yield Label("", id="path-header")
         yield FileTable(id="file-table")
 
     def on_mount(self) -> None:
@@ -57,6 +61,13 @@ class FilePane(Widget):
 
     def focus_table(self) -> None:
         self.query_one(FileTable).focus()
+
+    def set_filesystem(self, fs: Filesystem) -> None:
+        """Swap to a different filesystem backend (e.g. SFTP) and navigate home."""
+        self._fs = fs
+        self._history.clear()
+        self._cwd = fs.home
+        self._refresh()
 
     def navigate_to(self, path: Path) -> None:
         self._history.append(self._cwd)
@@ -87,14 +98,24 @@ class FilePane(Widget):
         return self._cwd
 
     @property
+    def fs(self) -> Filesystem:
+        return self._fs
+
+    @property
     def active_entry(self) -> FileEntry | None:
         return self.query_one(FileTable).current_entry()
 
     # ── Internal ───────────────────────────────────────────────────────────
 
     def _refresh(self) -> None:
-        self.query_one("#path-header", Label).update(f" {self._cwd}")
-        entries = listdir(self._cwd, self._show_hidden)
+        label = self._fs.label
+        header = f" [{label}]  {self._cwd}" if label != "local" else f" {self._cwd}"
+        self.query_one("#path-header", Label).update(header)
+        try:
+            entries = self._fs.listdir(self._cwd, self._show_hidden)
+        except Exception as e:
+            self.app.notify(f"Error listing directory: {e}", severity="error")
+            entries = []
         self.query_one(FileTable).load_entries(entries)
 
     def on_file_table_directory_opened(self, event: FileTable.DirectoryOpened) -> None:
@@ -104,3 +125,11 @@ class FilePane(Widget):
     def on_file_table_navigate_up(self, event: FileTable.NavigateUp) -> None:
         event.stop()
         self.go_up()
+
+    def on_file_table_archive_opened(self, event: FileTable.ArchiveOpened) -> None:
+        event.stop()
+        try:
+            fs = ArchiveFilesystem(event.entry.path)
+            self.set_filesystem(fs)
+        except Exception as e:
+            self.app.notify(f"Cannot open archive: {e}", severity="error")

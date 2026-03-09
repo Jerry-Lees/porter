@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.text import Text
+from textual import events
 from textual.message import Message
 from textual.widgets import DataTable
 
@@ -33,6 +34,18 @@ class FileTable(DataTable):
     class FileActivated(Message):
         def __init__(self, entry: FileEntry) -> None:
             self.entry = entry
+            super().__init__()
+
+    class ArchiveOpened(Message):
+        def __init__(self, entry: FileEntry) -> None:
+            self.entry = entry
+            super().__init__()
+
+    class ContextMenuRequested(Message):
+        def __init__(self, entry: FileEntry | None, x: int, y: int) -> None:
+            self.entry = entry
+            self.x = x
+            self.y = y
             super().__init__()
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
@@ -106,6 +119,8 @@ class FileTable(DataTable):
             return
         if entry.is_dir:
             self.post_message(self.DirectoryOpened(entry.path))
+        elif entry.is_archive:
+            self.post_message(self.ArchiveOpened(entry))
         else:
             self.post_message(self.FileActivated(entry))
 
@@ -113,3 +128,13 @@ class FileTable(DataTable):
         if event.key == "backspace":
             event.stop()
             self.post_message(self.NavigateUp())
+        elif event.key == "grave_accent":
+            event.stop()
+            self.post_message(self.ContextMenuRequested(self.current_entry(), 4, 4))
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        if event.button == 3:  # right-click
+            event.stop()
+            self.post_message(self.ContextMenuRequested(
+                self.current_entry(), event.screen_x, event.screen_y
+            ))
