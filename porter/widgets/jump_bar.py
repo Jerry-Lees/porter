@@ -39,6 +39,7 @@ class JumpBar(Widget):
         height: 1;
         border: none;
         background: $panel-lighten-1;
+        color: $text;
         padding: 0 1;
     }
     """
