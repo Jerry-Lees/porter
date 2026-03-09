@@ -30,6 +30,7 @@ class PorterApp(App):
         Binding("ctrl+r", "refresh_pane",   "Refresh", show=False, priority=True),
         Binding("alt+left", "go_back",      "Back",    show=False, priority=True),
         Binding("grave_accent", "context_menu", "Menu", show=False, priority=True),
+        Binding("colon", "jump", "Jump", show=False, priority=True),
     ]
 
     def __init__(self) -> None:
@@ -92,6 +93,9 @@ class PorterApp(App):
 
     def action_context_menu(self) -> None:
         self.notify("Context menu — coming soon", timeout=1.5)
+
+    def action_jump(self) -> None:
+        self._active_pane().open_jump_bar()
 
     # ── F3 View ────────────────────────────────────────────────────────────
 
