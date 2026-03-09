@@ -22,14 +22,14 @@ class PorterApp(App):
     CSS_PATH = "porter.tcss"
 
     BINDINGS = [
-        Binding("f3",  "view_file",     "View",    show=False),
-        Binding("f4",  "edit_file",     "Edit",    show=False),
-        Binding("f5",  "copy_file",     "Copy",    show=False),
-        Binding("f10", "quit",          "Quit"),
-        Binding("ctrl+h", "toggle_hidden",  "Hidden",  show=False),
-        Binding("ctrl+r", "refresh_pane",   "Refresh", show=False),
-        Binding("alt+left", "go_back",      "Back",    show=False),
-        Binding("grave_accent", "context_menu", "Menu", show=False),  # backtick
+        Binding("f3",  "view_file",     "View",    show=False, priority=True),
+        Binding("f4",  "edit_file",     "Edit",    show=False, priority=True),
+        Binding("f5",  "copy_file",     "Copy",    show=False, priority=True),
+        Binding("f10", "quit",          "Quit",               priority=True),
+        Binding("ctrl+h", "toggle_hidden",  "Hidden",  show=False, priority=True),
+        Binding("ctrl+r", "refresh_pane",   "Refresh", show=False, priority=True),
+        Binding("alt+left", "go_back",      "Back",    show=False, priority=True),
+        Binding("grave_accent", "context_menu", "Menu", show=False, priority=True),
     ]
 
     def __init__(self) -> None:
