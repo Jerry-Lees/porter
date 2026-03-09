@@ -26,7 +26,6 @@ class PorterApp(App):
         Binding("f3",  "view_file",     "View",    show=False, priority=True),
         Binding("f4",  "edit_file",     "Edit",    show=False, priority=True),
         Binding("f5",  "copy_file",     "Copy",    show=False, priority=True),
-        Binding("f10", "quit",          "Quit",               priority=True),
         Binding("ctrl+h", "toggle_hidden",  "Hidden",  show=False, priority=True),
         Binding("ctrl+r", "refresh_pane",   "Refresh", show=False, priority=True),
         Binding("alt+left", "go_back",      "Back",    show=False, priority=True),

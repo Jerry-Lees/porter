@@ -13,7 +13,6 @@ _FKEYS = [
     (6,  "Move"),
     (7,  "MkDir"),
     (8,  "Del"),
-    (10, "Quit"),
 ]
 
 
@@ -31,4 +30,6 @@ class FKeyBar(Widget):
         for num, label in _FKEYS:
             text.append(f" F{num} ", style="bold black on #5f87af")
             text.append(f"{label} ", style="white on #005f87")
+        text.append(" ^Q ", style="bold black on #5f87af")
+        text.append("Quit ", style="white on #005f87")
         return text
