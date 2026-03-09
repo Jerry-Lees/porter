@@ -21,6 +21,7 @@ class PorterApp(App):
 
     CSS_PATH = "porter.tcss"
 
+
     BINDINGS = [
         Binding("f3",  "view_file",     "View",    show=False, priority=True),
         Binding("f4",  "edit_file",     "Edit",    show=False, priority=True),
@@ -106,7 +107,7 @@ class PorterApp(App):
 
     # ── F4 Edit ────────────────────────────────────────────────────────────
 
-    async def action_edit_file(self) -> None:
+    def action_edit_file(self) -> None:
         entry = self._active_pane().active_entry
         if entry is None:
             return
@@ -114,7 +115,7 @@ class PorterApp(App):
             self.notify("Select a file to edit", severity="warning")
             return
         editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
-        async with self.suspend():
+        with self.suspend():
             subprocess.run([editor, str(entry.path)])
         self._active_pane().refresh_listing()
 
