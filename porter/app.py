@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -11,6 +13,7 @@ from textual import events
 
 from porter.widgets.fkey_bar import FKeyBar
 from porter.widgets.pane import FilePane
+from porter.widgets.viewer import ViewerScreen
 
 
 class PorterApp(App):
@@ -19,10 +22,13 @@ class PorterApp(App):
     CSS_PATH = "porter.tcss"
 
     BINDINGS = [
-        Binding("f10", "quit", "Quit"),
-        Binding("ctrl+h", "toggle_hidden", "Hidden", show=False),
-        Binding("ctrl+r", "refresh_pane", "Refresh", show=False),
-        Binding("alt+left", "go_back", "Back", show=False),
+        Binding("f3",  "view_file",     "View",    show=False),
+        Binding("f4",  "edit_file",     "Edit",    show=False),
+        Binding("f5",  "copy_file",     "Copy",    show=False),
+        Binding("f10", "quit",          "Quit"),
+        Binding("ctrl+h", "toggle_hidden",  "Hidden",  show=False),
+        Binding("ctrl+r", "refresh_pane",   "Refresh", show=False),
+        Binding("alt+left", "go_back",      "Back",    show=False),
         Binding("grave_accent", "context_menu", "Menu", show=False),  # backtick
     ]
 
@@ -87,9 +93,34 @@ class PorterApp(App):
     def action_context_menu(self) -> None:
         self.notify("Context menu — coming soon", timeout=1.5)
 
+    # ── F3 View ────────────────────────────────────────────────────────────
+
+    def action_view_file(self) -> None:
+        entry = self._active_pane().active_entry
+        if entry is None:
+            return
+        if entry.is_dir:
+            self.notify("Select a file to view", severity="warning")
+            return
+        self.push_screen(ViewerScreen(entry.path))
+
+    # ── F4 Edit ────────────────────────────────────────────────────────────
+
+    async def action_edit_file(self) -> None:
+        entry = self._active_pane().active_entry
+        if entry is None:
+            return
+        if entry.is_dir:
+            self.notify("Select a file to edit", severity="warning")
+            return
+        editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
+        async with self.suspend():
+            subprocess.run([editor, str(entry.path)])
+        self._active_pane().refresh_listing()
+
     # ── F5 Copy (stub) ─────────────────────────────────────────────────────
 
-    def action_copy(self) -> None:
+    def action_copy_file(self) -> None:
         src = self._active_pane().active_entry
         dst_dir = self._inactive_pane().cwd
         if src is None:
