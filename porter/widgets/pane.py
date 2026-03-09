@@ -11,7 +11,6 @@ from textual.widgets import Label
 from porter.fs.local import listdir
 from porter.models.entry import FileEntry
 from porter.widgets.file_table import FileTable
-from porter.widgets.jump_bar import JumpBar
 
 
 class FilePane(Widget):
@@ -39,12 +38,6 @@ class FilePane(Widget):
     FilePane > FileTable {
         height: 1fr;
     }
-    FilePane > JumpBar {
-        display: none;
-    }
-    FilePane > JumpBar.visible {
-        display: block;
-    }
     """
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -53,12 +46,9 @@ class FilePane(Widget):
         self._show_hidden: bool = False
         self._history: list[Path] = []
 
-    # ── Composition ────────────────────────────────────────────────────────
-
     def compose(self) -> ComposeResult:
         yield Label(str(self._cwd), id="path-header")
         yield FileTable(id="file-table")
-        yield JumpBar(id="jump-bar")
 
     def on_mount(self) -> None:
         self._refresh()
@@ -92,12 +82,6 @@ class FilePane(Widget):
     def refresh_listing(self) -> None:
         self._refresh()
 
-    def open_jump_bar(self) -> None:
-        bar = self.query_one(JumpBar)
-        bar.add_class("visible")
-        bar.query_one("#jump-input").value = str(self._cwd) + "/"
-        bar.query_one("#jump-input").focus()
-
     @property
     def cwd(self) -> Path:
         return self._cwd
@@ -113,12 +97,6 @@ class FilePane(Widget):
         entries = listdir(self._cwd, self._show_hidden)
         self.query_one(FileTable).load_entries(entries)
 
-    def _close_jump_bar(self) -> None:
-        self.query_one(JumpBar).remove_class("visible")
-        self.focus_table()
-
-    # ── Message handlers ───────────────────────────────────────────────────
-
     def on_file_table_directory_opened(self, event: FileTable.DirectoryOpened) -> None:
         event.stop()
         self.navigate_to(event.path)
@@ -126,12 +104,3 @@ class FilePane(Widget):
     def on_file_table_navigate_up(self, event: FileTable.NavigateUp) -> None:
         event.stop()
         self.go_up()
-
-    def on_jump_bar_jump(self, event: JumpBar.Jump) -> None:
-        event.stop()
-        self._close_jump_bar()
-        self.navigate_to(event.path)
-
-    def on_jump_bar_cancelled(self, event: JumpBar.Cancelled) -> None:
-        event.stop()
-        self._close_jump_bar()

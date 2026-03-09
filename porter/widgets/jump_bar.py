@@ -1,4 +1,4 @@
-"""JumpBar — quick path-entry bar, triggered by ':'.  Esc to cancel, Enter to jump."""
+"""JumpScreen — quick-jump modal, triggered by ':'.  Esc to cancel, Enter to jump."""
 
 from __future__ import annotations
 
@@ -6,68 +6,70 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.message import Message
-from textual.widget import Widget
+from textual.screen import ModalScreen
 from textual.widgets import Input, Label
+from textual.containers import Vertical
 
 
-class JumpBar(Widget):
-    """A single-line path input that slides in at the bottom of a FilePane."""
+class JumpScreen(ModalScreen[Path | None]):
+    """Small overlay at the bottom of the screen for typing a path."""
 
-    class Jump(Message):
-        def __init__(self, path: Path) -> None:
-            self.path = path
-            super().__init__()
-
-    class Cancelled(Message):
-        pass
+    BINDINGS = [Binding("escape", "dismiss_none", "Cancel", priority=True)]
 
     DEFAULT_CSS = """
-    JumpBar {
-        height: 1;
-        layout: horizontal;
+    JumpScreen {
+        align: left bottom;
+        background: transparent;
     }
-    JumpBar > Label {
-        width: auto;
-        padding: 0 1;
+    JumpScreen > Vertical {
+        width: 100%;
+        height: auto;
+        background: $panel-darken-1;
+        padding: 0;
+    }
+    JumpScreen Label {
         background: $accent;
         color: $text;
-    }
-    JumpBar > Input {
-        width: 1fr;
-        height: 1;
-        border: none;
-        background: $panel-lighten-1;
-        color: $text;
+        width: 100%;
         padding: 0 1;
+    }
+    JumpScreen Input {
+        width: 100%;
+        background: $panel-lighten-2;
+        color: white;
+        border: none;
     }
     """
 
+    def __init__(self, start: Path) -> None:
+        super().__init__()
+        self._start = start
+
     def compose(self) -> ComposeResult:
-        yield Label("Go to:")
-        yield Input(placeholder="path  (Tab to complete)", id="jump-input")
+        with Vertical():
+            yield Label("Jump to directory  (Tab to complete, Esc to cancel)")
+            yield Input(value=str(self._start) + "/", id="jump-input")
 
     def on_mount(self) -> None:
-        self.query_one(Input).focus()
+        inp = self.query_one(Input)
+        inp.focus()
+        inp.cursor_position = len(inp.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        event.stop()
         raw = event.value.strip()
         path = Path(raw).expanduser().resolve()
         if path.is_dir():
-            self.post_message(self.Jump(path))
+            self.dismiss(path)
         else:
-            self.query_one(Input).add_class("-invalid")
             self.app.notify(f"Not a directory: {raw}", severity="error", timeout=2)
 
     def on_key(self, event) -> None:
-        if event.key == "escape":
-            event.stop()
-            self.post_message(self.Cancelled())
-        elif event.key == "tab":
+        if event.key == "tab":
             event.stop()
             self._complete()
+
+    def action_dismiss_none(self) -> None:
+        self.dismiss(None)
 
     def _complete(self) -> None:
         inp = self.query_one(Input)
@@ -76,17 +78,13 @@ class JumpBar(Widget):
         parent = path.parent if not raw.endswith("/") else path
         stem = path.name if not raw.endswith("/") else ""
         try:
-            matches = sorted(
-                p for p in parent.iterdir()
-                if p.is_dir() and p.name.startswith(stem)
-            )
+            matches = sorted(p for p in parent.iterdir() if p.is_dir() and p.name.startswith(stem))
         except OSError:
             return
         if len(matches) == 1:
             inp.value = str(matches[0]) + "/"
             inp.cursor_position = len(inp.value)
         elif len(matches) > 1:
-            # Fill common prefix
             common = _common_prefix([m.name for m in matches])
             inp.value = str(parent / common)
             inp.cursor_position = len(inp.value)

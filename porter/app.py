@@ -12,6 +12,7 @@ from textual.containers import Horizontal
 from textual import events
 
 from porter.widgets.fkey_bar import FKeyBar
+from porter.widgets.jump_bar import JumpScreen
 from porter.widgets.pane import FilePane
 from porter.widgets.viewer import ViewerScreen
 
@@ -97,7 +98,11 @@ class PorterApp(App):
         self.notify("Context menu — coming soon", timeout=1.5)
 
     def action_jump(self) -> None:
-        self._active_pane().open_jump_bar()
+        pane = self._active_pane()
+        def on_result(path: Path | None) -> None:
+            if path:
+                pane.navigate_to(path)
+        self.push_screen(JumpScreen(pane.cwd), on_result)
 
     # ── F3 View ────────────────────────────────────────────────────────────
 
