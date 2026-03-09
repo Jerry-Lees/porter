@@ -1,0 +1,35 @@
+/* porter.tcss — application-wide styles */
+
+Screen {
+    layout: vertical;
+}
+
+#pane-row {
+    height: 1fr;
+    layout: horizontal;
+}
+
+FilePane {
+    width: 1fr;
+    height: 100%;
+    border: tall $panel-lighten-1;
+}
+
+FilePane.active {
+    border: tall $accent;
+}
+
+FileTable {
+    height: 1fr;
+    scrollbar-gutter: stable;
+}
+
+/* Status bar placeholder above FKeyBar */
+#status-bar {
+    height: 1;
+    dock: bottom;
+    background: $panel;
+    color: $text-muted;
+    padding: 0 1;
+    offset: 0 -1;   /* sits immediately above the FKeyBar */
+}
