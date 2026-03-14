@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import stat as stat_module
 from pathlib import Path, PurePosixPath
 
@@ -110,6 +111,90 @@ class SFTPFilesystem(Filesystem):
         assert self._sftp, "Not connected"
         attr = self._sftp.stat(str(path))
         return self._attr_to_entry(path, attr)
+
+    def same_server_as(self, other: "SFTPFilesystem") -> bool:
+        return self._hostname == other._hostname and self._port == other._port
+
+    def download(self, remote_path: Path, local_dst_dir: Path) -> None:
+        """Download a remote file or directory tree into local_dst_dir."""
+        assert self._sftp, "Not connected"
+        attr = self._sftp.stat(str(remote_path))
+        if stat_module.S_ISDIR(attr.st_mode or 0):
+            self._download_dir(remote_path, local_dst_dir / remote_path.name)
+        else:
+            local_dst_dir.mkdir(parents=True, exist_ok=True)
+            self._sftp.get(str(remote_path), str(local_dst_dir / remote_path.name))
+
+    def _download_dir(self, remote_path: Path, local_path: Path) -> None:
+        local_path.mkdir(parents=True, exist_ok=True)
+        for attr in self._sftp.listdir_attr(str(remote_path)):
+            child_remote = remote_path / attr.filename
+            if stat_module.S_ISDIR(attr.st_mode or 0):
+                self._download_dir(child_remote, local_path / attr.filename)
+            else:
+                self._sftp.get(str(child_remote), str(local_path / attr.filename))
+
+    def upload(self, local_path: Path, remote_dst_dir: Path) -> None:
+        """Upload a local file or directory tree into remote_dst_dir."""
+        assert self._sftp and self._client, "Not connected"
+        if local_path.is_dir():
+            remote_subdir = remote_dst_dir / local_path.name
+            self._mkdir_remote(remote_subdir)
+            for child in local_path.iterdir():
+                self.upload(child, remote_subdir)
+        else:
+            self._sftp.put(str(local_path), str(remote_dst_dir / local_path.name))
+
+    def _mkdir_remote(self, path: Path) -> None:
+        _, _, stderr = self._client.exec_command(
+            f"mkdir -p {shlex.quote(str(path))}"
+        )
+        err = stderr.read().decode().strip()
+        if err:
+            raise OSError(err)
+
+    def copy_remote(self, src: Path, dst_dir: Path) -> None:
+        """Server-side copy of src into dst_dir (cp -r)."""
+        assert self._client, "Not connected"
+        dst = dst_dir / src.name
+        _, _, stderr = self._client.exec_command(
+            f"cp -r {shlex.quote(str(src))} {shlex.quote(str(dst))}"
+        )
+        err = stderr.read().decode().strip()
+        if err:
+            raise OSError(err)
+
+    def move_remote(self, src: Path, dst_dir: Path) -> None:
+        """Server-side move of src into dst_dir (mv)."""
+        assert self._client, "Not connected"
+        dst = dst_dir / src.name
+        _, _, stderr = self._client.exec_command(
+            f"mv {shlex.quote(str(src))} {shlex.quote(str(dst))}"
+        )
+        err = stderr.read().decode().strip()
+        if err:
+            raise OSError(err)
+
+    def remove(self, path: Path) -> None:
+        """Remove a file or directory tree on the remote host."""
+        assert self._sftp and self._client, "Not connected"
+        try:
+            attr = self._sftp.stat(str(path))
+        except IOError as e:
+            raise OSError(str(e)) from e
+        if stat_module.S_ISDIR(attr.st_mode or 0):
+            # Use rm -rf over SSH — SFTP-only recursive delete is painfully slow
+            _, _, stderr = self._client.exec_command(
+                f"rm -rf {shlex.quote(str(path))}"
+            )
+            err = stderr.read().decode().strip()
+            if err:
+                raise OSError(err)
+        else:
+            try:
+                self._sftp.remove(str(path))
+            except IOError as e:
+                raise OSError(str(e)) from e
 
     # ── Internal ───────────────────────────────────────────────────────────
 

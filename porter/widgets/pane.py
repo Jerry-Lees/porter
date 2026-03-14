@@ -77,8 +77,14 @@ class FilePane(Widget):
     def go_up(self) -> None:
         parent = self._cwd.parent
         if parent != self._cwd:
-            self._history.append(self._cwd)
             self._cwd = parent
+            self._refresh()
+        elif isinstance(self._fs, ArchiveFilesystem):
+            # At archive virtual root — exit back to the local directory containing the archive
+            archive_path = self._fs._archive_path
+            self._fs = _LOCAL
+            self._history.clear()
+            self._cwd = archive_path.parent
             self._refresh()
 
     def go_back(self) -> None:
@@ -104,6 +110,10 @@ class FilePane(Widget):
     @property
     def active_entry(self) -> FileEntry | None:
         return self.query_one(FileTable).current_entry()
+
+    @property
+    def selected_entries(self) -> list[FileEntry]:
+        return self.query_one(FileTable).selected_entries()
 
     # ── Internal ───────────────────────────────────────────────────────────
 

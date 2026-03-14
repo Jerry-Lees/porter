@@ -6,6 +6,7 @@ from pathlib import Path
 
 from rich.text import Text
 from textual import events
+from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.widgets import DataTable
 
@@ -54,6 +55,7 @@ class FileTable(DataTable):
         super().__init__(cursor_type="row", zebra_stripes=True, **kwargs)
         self._row_entries: dict[str, FileEntry | None] = {}
         self._current_row_key: str | None = _PARENT_KEY
+        self._selected: set[str] = set()
 
     def on_mount(self) -> None:
         self.add_column("Name",     key="name",  width=30)
@@ -69,6 +71,7 @@ class FileTable(DataTable):
         with self.prevent(DataTable.RowHighlighted, DataTable.RowSelected):
             self.clear()
             self._row_entries.clear()
+            self._selected.clear()
 
             # ".." is always first
             self.add_row(Text("..", style="bold"), "", "", "", "", key=_PARENT_KEY)
@@ -102,7 +105,44 @@ class FileTable(DataTable):
             return None
         return self._row_entries.get(self._current_row_key)
 
+    def selected_entries(self) -> list[FileEntry]:
+        """Return all explicitly selected entries (space-tagged), or [] if none."""
+        result = []
+        for key in self._selected:
+            entry = self._row_entries.get(key)
+            if entry is not None:
+                result.append(entry)
+        return result
+
+    def _update_row_style(self, key: str, entry: FileEntry) -> None:
+        """Re-render the name cell to reflect selected/unselected state."""
+        if key in self._selected:
+            name_text = Text("* " + (entry.name + "/" if entry.is_dir else entry.name),
+                             style="bold yellow")
+        elif entry.is_dir:
+            name_text = Text(entry.name + "/", style="bold cyan")
+        elif entry.is_archive:
+            name_text = Text(entry.name, style="bold yellow")
+        else:
+            name_text = Text(entry.name)
+        self.update_cell(key, "name", name_text)
+
     # ── Event handlers ─────────────────────────────────────────────────────
+
+    async def _on_click(self, event: events.Click) -> None:
+        """Single-click selects — fire RowSelected immediately on any row click."""
+        meta = event.style.meta
+        if "row" in meta and "column" in meta:
+            row_index = meta["row"]
+            is_header = self.show_header and row_index == -1
+            if not is_header and self.show_cursor and self.cursor_type != "none":
+                self.cursor_coordinate = Coordinate(row_index, meta["column"])
+                self._post_selected_message()
+                self._scroll_cursor_into_view(animate=True)
+                event.prevent_default()
+                event.stop()
+                return
+        await super()._on_click(event)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.row_key is not None:
@@ -131,6 +171,18 @@ class FileTable(DataTable):
         elif event.key == "grave_accent":
             event.stop()
             self.post_message(self.ContextMenuRequested(self.current_entry(), 4, 4))
+        elif event.key == "space":
+            event.stop()
+            key = self._current_row_key
+            if key and key != _PARENT_KEY:
+                entry = self._row_entries.get(key)
+                if entry is not None:
+                    if key in self._selected:
+                        self._selected.discard(key)
+                    else:
+                        self._selected.add(key)
+                    self._update_row_style(key, entry)
+            self.action_cursor_down()
 
     def on_mouse_up(self, event: events.MouseUp) -> None:
         if event.button == 3:  # right-click

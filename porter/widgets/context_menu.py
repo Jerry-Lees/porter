@@ -37,6 +37,14 @@ class ContextMenu(ModalScreen[str | None]):
     """
 
     # action key → label
+    _BACKGROUND_ITEMS = [
+        ("new_archive",     "New Archive…"),
+        (None,              "─────────────────────"),
+        ("snapshot",        "Take Snapshot"),
+        ("system_snapshot", "System Snapshot (from /)"),
+        ("build_archive",   "Build Archive from Diff"),
+    ]
+
     _FILE_ITEMS = [
         ("view",    "View"),
         ("edit",    "Edit"),
@@ -79,7 +87,7 @@ class ContextMenu(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         if self._entry is None:
-            items_def = self._FILE_ITEMS
+            items_def = self._BACKGROUND_ITEMS
         elif self._entry.is_archive:
             items_def = self._ARCHIVE_ITEMS
         elif self._entry.is_dir:

@@ -11,10 +11,12 @@ Born from the same frustration that created Midnight Commander thirty years ago:
 ## Table of Contents
 
 - [About Porter](#about-porter)
-- [Features](#features)
+- [What Is Actually Built](#what-is-actually-built)
 - [Setup Guide](#setup-guide)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Archive Virtual Filesystem](#archive-virtual-filesystem)
+- [SSH Connection Manager](#ssh-connection-manager)
+- [Snapshot and Deployment Package Builder](#snapshot-and-deployment-package-builder)
 - [Labinator Integration](#labinator-integration)
 - [Troubleshooting](#troubleshooting)
 - [Standing on Good Shoulders](#standing-on-good-shoulders)
@@ -31,68 +33,64 @@ Two panes. Any combination of local filesystem, remote SSH host, or archive. Eve
 
 ---
 
-## Features
+## What Is Actually Built
 
-### Dual-Pane SSH/SFTP File Browser
+This section documents what is implemented and working today. Features listed elsewhere in the README that are not listed here are planned but not yet built.
 
-| Pane type | Description |
-|---|---|
-| Local filesystem | The machine porter is running on |
-| Remote host (SSH/SFTP) | Any host reachable via SSH key authentication |
-| NFS mount | Locally-mounted NFS share — treated as local |
-| Archive (.tar.gz / .zip) | Browse or build an archive as a virtual filesystem |
+### Core file manager
+- Dual-pane browser — Tab switches active pane
+- Full file listing: name, permissions, owner, size, modified date
+- Single-click navigation, keyboard navigation, Backspace to go up
+- Hidden file toggle (`Ctrl+H`)
+- Quick-jump to any path with `:` (opens a path input bar)
+- Pane history navigation (`Alt+Left`)
+- Pane refresh (`Ctrl+R`)
 
-- Both panes are independently navigable — Tab switches the active pane
-- Full file listing: name, permissions, owner, group, size, modified date
-- Toggle hidden (dot) files per pane with `Ctrl+H`
-- Navigate history per pane with `Alt+Left` / `Alt+Right`
-- Quick-jump to any path with `:` (tab completion supported)
-- Bookmark frequently used paths with `Ctrl+D`
+### File operations (all with confirmation dialog)
+- **F3** View — opens a file viewer
+- **F4** Edit — opens `$EDITOR`, saves in place
+- **F5** Copy — to the other pane
+- **F6** Move — to the other pane
+- **F7** MkDir — create a new directory
+- **F8** Delete — files or directories (recursive with warning)
+- **^N** New Archive — create an empty `.tar.gz`, `.zip`, etc. in the current pane
+- **Space** — toggle-select a file and advance the cursor; all subsequent F5/F6/F8 operations apply to the full selection
+- **^Q** Quit
 
-### SSH Connection Manager
+### Context menu
+- **Backtick** `` ` `` or **right-click** opens a context menu
+- Menu adapts per item type: file, directory, or archive
+- Right-clicking empty directory background shows: New Archive, Take Snapshot, System Snapshot (from /), Build Archive from Diff
 
-- Reads `~/.ssh/config` automatically — `Host` blocks with `IdentityFile`, `ProxyJump`, `Port`, and `User` are all respected
-- ProxyJump / bastion hosts work transparently
-- Non-standard ports inline: `myserver.example.com:2222`
-- Open a connection with `Ctrl+O`
+### SSH / SFTP filesystem
+- `Ctrl+O` opens the connection dialog
+- Reads `~/.ssh/config` automatically — HostName, User, Port, IdentityFile, ProxyJump all respected
+- **Saved connections** — check "Save this connection" when entering manually; saved to `~/.config/porter/hosts.yaml` and shown in the connection dialog on every future open
+- All file operations work over SFTP: view, edit, copy, move, delete
+- Cross-filesystem transfers fully routed:
+  - Local ↔ Local
+  - Local ↔ SFTP
+  - Local ↔ Archive
+  - SFTP ↔ SFTP (same server: server-side `cp`/`mv`; different servers: via temp)
+  - SFTP ↔ Archive
+  - Archive ↔ Archive
 
-### File Operations
+### Archive virtual filesystem
+- `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`, `.tar`, `.zip` open as browsable virtual filesystems
+- Inside an archive: navigate directories, view files, edit files (repack on save), copy in, copy out, delete, rename, mkdir, verify integrity
+- Pressing `..` at the archive root exits back to the real filesystem
+- Archive ↔ Archive transfers extract to temp and repack transparently
 
-| Operation | Key | Notes |
-|---|---|---|
-| View file | F3 | Syntax-highlighted viewer for config files |
-| Edit file | F4 | Opens `$EDITOR`, uploads on save |
-| Copy to other pane | F5 | Confirmation dialog with overwrite warning |
-| Move to other pane | F6 | — |
-| Create directory | F7 | Also creates new archives |
-| Delete | F8 | Confirmation required; recursive for directories |
-| Quit | F10 | — |
+### Snapshot and deployment package builder
+- **Take Snapshot** — records every file's mtime, size, mode, uid, and gid under the current directory
+- **System Snapshot (from /)** — indexes the entire filesystem from `/` in a background thread; configurable exclusion list (virtual fs, logs, caches, build artifacts); UI stays responsive during the walk
+- **Build Archive from Diff** — detects NEW and MOD files (content, permissions, or ownership changes) since either type of snapshot, builds a deployment archive
+- Archives are stored with **absolute paths from `/`** — extract with `sudo tar -xzf pkg.tar.gz -C /` to place files in the correct locations on the target
+- Every diff archive includes a `manifest.yaml` — see [Snapshot and Deployment Package Builder](#snapshot-and-deployment-package-builder) for full details
 
-### Context Menu
-
-Right-click any file or directory for a full action menu. Keyboard users can press backtick `` ` `` to open the menu at the cursor position.
-
-Context menu adapts based on what is highlighted — files, directories, and archives each show relevant actions. Archive files show **Open Archive**, **Verify Integrity**, and **Extract to other pane**.
-
-### Archive Virtual Filesystem
-
-Archives open as browsable virtual filesystems. The F-key bar updates dynamically when an archive is highlighted to signal available actions. See [Archive Virtual Filesystem](#archive-virtual-filesystem) below.
-
-### Transfers
-
-- Transfer progress bar with per-file and total speed, ETA, and bytes transferred
-- rsync backend for large live-to-live transfers (falls back to SFTP if unavailable)
-- Transfer queue panel — retry failed transfers individually or all at once
-- Resume interrupted SFTP transfers on reconnect
-- Optional bandwidth limiting per transfer or globally
-
-### Permissions and Ownership
-
-All transfers preserve chmod bits and uid/gid:
-
-- `tarfile` preserves mode, uid, and gid natively for archive operations
-- SFTP `stat` / `chmod` / `chown` for remote-to-remote transfers
-- The uid/gid caveat: numeric IDs must match on the destination system. In the labinator workflow, packages are installed before archive extraction so system users already exist with correct IDs. Custom users are documented in the `labinator-manifest.yaml` sidecar.
+### Installer and launcher
+- `install.sh` — full installer that checks Python version, installs system packages via `apt`/`dnf`/`pacman`, creates the venv, installs all Python dependencies, and symlinks `porter` into `/usr/local/bin` (prompts for sudo if needed)
+- `porter.sh` — run script that activates the venv, launches porter, and deactivates cleanly on exit; symlink-safe (uses `readlink -f` to find the real venv path)
 
 ---
 
@@ -101,12 +99,27 @@ All transfers preserve chmod bits and uid/gid:
 ### Requirements
 
 - Python 3.11 or newer
-- A terminal emulator with 256-color support (xterm-256color, most modern terminals qualify)
+- A terminal emulator with 256-color support (xterm-256color; most modern terminals qualify)
 - SSH key authentication configured for any remote hosts you plan to connect to
 
-### Install
+### Install with the installer (recommended)
 
-Clone the repo and install into a virtual environment:
+```bash
+git clone https://github.com/Jerry-Lees/porter.git
+cd porter
+./install.sh
+```
+
+The installer will:
+1. Confirm Python 3.11+ is available
+2. Install system packages (`python3-venv`, `openssh-client`, `rsync`) via your distro's package manager
+3. Create a `.venv` virtual environment
+4. Install porter and all Python dependencies (`textual`, `paramiko`, `PyYAML`)
+5. Write a `porter.sh` launcher and offer to symlink it to `/usr/local/bin/porter`
+
+If it can't write to `/usr/local/bin` without elevated privileges, it will ask whether to retry with `sudo`. If you decline, it prints the `export PATH=...` line to add to your shell profile.
+
+### Install manually
 
 ```bash
 git clone https://github.com/Jerry-Lees/porter.git
@@ -119,16 +132,19 @@ pip install -e .
 ### Run
 
 ```bash
-# From inside the venv
+# Via the launcher (handles venv automatically)
+./porter.sh
+
+# Or if /usr/local/bin is in PATH after running install.sh
 porter
 
-# Or directly
+# Or directly inside the venv
 python -m porter
 ```
 
 ### SSH Setup
 
-Porter reads `~/.ssh/config` and uses your existing SSH keys. No extra configuration needed if your hosts are already defined in SSH config. Example SSH config block:
+Porter reads `~/.ssh/config` and uses your existing SSH keys. No extra configuration needed if your hosts are already defined there. Example:
 
 ```
 Host proxmox02
@@ -142,19 +158,7 @@ Host pihole
     ProxyJump bastion
 ```
 
-Connect to any configured host with `Ctrl+O`.
-
-### Config File
-
-Porter stores its own config at `~/.config/porter/config.yaml`. It is created automatically on first run. Options include:
-
-```yaml
-labinator_path: ~/projects/HomeLab/labinator   # path to your labinator repo
-show_hidden: false                              # default hidden file visibility
-bandwidth_limit: 0                             # transfer cap in KB/s (0 = unlimited)
-```
-
-Bookmarks are stored separately in `~/.config/porter/bookmarks.yaml`.
+Connect to any configured host with `Ctrl+O`. Hosts from `~/.ssh/config` appear in the list automatically. Connections entered manually can be saved to `~/.config/porter/hosts.yaml` for future use.
 
 ---
 
@@ -165,48 +169,38 @@ Bookmarks are stored separately in `~/.config/porter/bookmarks.yaml`.
 | Key | Action |
 |---|---|
 | Tab | Switch active pane |
-| Enter | Open directory / view file |
-| `:` | Open quick-jump path bar |
+| Enter / click | Open directory or activate file |
+| Backspace | Go up one directory |
+| `:` | Quick-jump to any path |
 | Alt+Left | Navigate back in pane history |
-| Alt+Right | Navigate forward in pane history |
 | Ctrl+H | Toggle hidden (dot) files |
-| Ctrl+R | Refresh current pane |
+| Ctrl+R | Refresh current pane listing |
 
 ### File Operations
 
 | Key | Action |
 |---|---|
-| F3 | View file (syntax highlighted) |
+| F3 | View file |
 | F4 | Edit file in `$EDITOR` |
 | F5 | Copy to other pane |
 | F6 | Move to other pane |
 | F7 | Create directory |
-| F8 | Delete selected |
-| F10 | Quit |
+| F8 | Delete selected file(s) or directory |
+| Space | Toggle-select current file, advance cursor |
+| ^N | Create new empty archive |
+| ^Q | Quit |
 
-### Selection
-
-| Key | Action |
-|---|---|
-| Space / Ins | Toggle select current file, move down |
-| Ctrl+A | Select all |
-| Ctrl+I | Invert selection |
-| Shift+Arrow | Extend selection |
-
-### Connection & Session
+### Connection
 
 | Key | Action |
 |---|---|
-| Ctrl+O | Open connection dialog |
-| Ctrl+T | New tab |
-| Ctrl+W | Close current tab |
-| Ctrl+D | Bookmark current path |
+| Ctrl+O | Open SSH connection dialog |
 
 ### Context Menu
 
 | Key | Action |
 |---|---|
-| Backtick `` ` `` | Open context menu at cursor |
+| Backtick `` ` `` | Open context menu at cursor position |
 | Right-click | Open context menu at mouse position |
 
 > **Note on modifier keys:** `Ctrl` and `Alt` are fully supported in terminal applications. The `Super` / `Windows` / `Cmd` key is captured by the OS or window manager before it reaches the terminal and is not used.
@@ -215,34 +209,116 @@ Bookmarks are stored separately in `~/.config/porter/bookmarks.yaml`.
 
 ## Archive Virtual Filesystem
 
-Archives (`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`, `.zip`) are treated as virtual filesystems. When the cursor highlights an archive file, the F-key bar updates to indicate available archive actions — the label changes color and text so it is impossible to miss.
+Archives (`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`, `.zip`) open as virtual filesystems directly in a pane. Once mounted, the experience is identical to browsing a live directory.
 
-Pressing the highlighted key mounts the archive in that pane. Navigation from that point is identical to a live filesystem.
+### What you can do inside an archive
 
-### Modes
+| Operation | How |
+|---|---|
+| Browse directories | Navigate normally |
+| View a file | F3 or context menu |
+| Edit a file | F4 — extracts to temp, opens `$EDITOR`, repacks on save |
+| Copy files out | F5 — copies to the other pane (local or SFTP) |
+| Copy files in | F5 from the other pane — adds to the archive |
+| Delete a member | F8 |
+| Rename a member | Context menu → Rename |
+| Create a directory | F7 |
+| Verify integrity | Context menu → Verify Integrity |
+| Exit the archive | Navigate to `..` at the root level |
 
-**Browse** — open an existing archive and navigate its contents. Copy files out to the other pane.
+### Create a new empty archive
 
-**Build** — start with an empty archive (`F7 New Archive`, prompts for name and format). Copy files in from the other pane. The archive grows as files are added. Save when done.
+Press `^N` or right-click the directory background → **New Archive…**. Type a name including the desired extension (`.tar.gz`, `.tar.bz2`, `.tar.xz`, `.zip`). The archive is created immediately in the current pane and you can start copying files into it.
 
-**Edit** — open an existing archive, add or remove files, save back. The original is preserved until you explicitly save.
+### Archive format support
 
-### Archive Format Support
-
-| Format | Read | Write |
+| Format | Browse | Modify |
 |---|---|---|
 | `.tar.gz` / `.tgz` | ✓ | ✓ |
 | `.tar.bz2` | ✓ | ✓ |
 | `.tar.xz` | ✓ | ✓ |
+| `.tar` | ✓ | ✓ |
 | `.zip` | ✓ | ✓ |
 
-When creating a new archive, a format picker and compression level selector (Fast / Balanced / Maximum) are shown.
+Modifying compressed tar archives (`.tar.gz`, `.tar.bz2`, `.tar.xz`) requires a full repack — porter handles this transparently via a temp file. Plain `.tar` and `.zip` support true append mode.
 
-Archive-to-archive transfers are fully supported. Porter extracts to a temp location and repacks transparently — it just works.
+---
 
-### Archive Integrity Verification
+## SSH Connection Manager
 
-Right-click an archive and choose **Verify Integrity** to test the archive without extracting. A pass/fail result is shown with details on any corrupted members.
+Press `Ctrl+O` to open the connection dialog. It shows three sections:
+
+**Known hosts (`~/.ssh/config`)** — parsed automatically. `Host`, `HostName`, `User`, `Port`, `IdentityFile`, and `ProxyJump` are all respected. Select a host and press Enter (or double-click) to connect immediately.
+
+**Saved connections** — hosts you have previously saved from within porter. Stored in `~/.config/porter/hosts.yaml`. Same one-click connect behavior.
+
+**Manual entry** — type `user@host` or `user@host:port`. Check **Save this connection** before clicking Connect to persist it to the saved connections list for future sessions.
+
+---
+
+## Snapshot and Deployment Package Builder
+
+This feature is designed for building "finish setup" packages — archives that, when extracted onto a new system, drop config files, scripts, and other assets into their correct locations and document everything needed to reproduce the source system's state.
+
+There are two snapshot modes depending on how much of the system you changed:
+
+### Directory snapshot (targeted)
+
+Use this when you know changes were confined to a specific subtree (e.g., you only touched `/etc/nginx`).
+
+1. Navigate to the directory you want to watch in the active pane.
+2. Right-click the directory background → **Take Snapshot**. Porter records the mtime, size, permissions (mode), uid, and gid of every file under that directory recursively.
+3. Make your changes.
+4. Right-click the background → **Build Archive from Diff**. Porter compares the current state against the snapshot and shows every file that is **NEW** or **MOD** (changed content, permissions, or ownership).
+5. Name the archive. It is created in the **other pane's current directory**.
+
+### System snapshot (whole machine)
+
+Use this when changes happened in multiple locations across the filesystem and you don't want to miss anything.
+
+1. Right-click the directory background → **System Snapshot (from /)**.
+2. A dialog appears showing the default exclusion list. Review it, add any additional paths or directory names to skip, then click **Take Snapshot**.
+3. Porter walks the entire filesystem from `/` in a **background thread** — the UI stays responsive. A notification fires when indexing is complete with the file count.
+4. Make your changes anywhere on the system.
+5. Right-click the background → **Build Archive from Diff** — same as the directory workflow from here.
+
+#### Default exclusions
+
+The following are excluded automatically to avoid capturing volatile or virtual filesystem content:
+
+| Type | Excluded |
+|---|---|
+| Virtual filesystems | `/proc` `/sys` `/dev` `/run` `/var/run` |
+| Ephemeral directories | `/tmp` `/var/tmp` |
+| Log and cache | `/var/log` `/var/cache` |
+| External mounts | `/mnt` `/media` `/snap` |
+| Build artifacts (by name) | `.git` `__pycache__` `node_modules` `.venv` `.cache` |
+
+You can add additional exclusions in the dialog before taking the snapshot. Full paths (starting with `/`) exclude that entire subtree. Plain names (no `/`) exclude any directory with that name anywhere in the tree.
+
+### Archive structure
+
+Files are stored with their **absolute paths from `/`**. A file at `/etc/nginx/nginx.conf` is stored in the archive as `etc/nginx/nginx.conf`. To extract correctly on the target system:
+
+```bash
+sudo tar -xzf mypackage.tar.gz -C /
+```
+
+### manifest.yaml
+
+Every diff archive includes a `manifest.yaml` at the archive root. It contains:
+
+| Section | Contents |
+|---|---|
+| `porter_manifest` | Version, creation timestamp, hostname, source base directory, file count |
+| `os` | Pretty name, distro ID, version, kernel version, architecture |
+| `extraction` | Exact extraction command, step-by-step notes |
+| `local_users` | All non-system user accounts (uid 1000–60000) with uid, gid, home, shell |
+| `systemd_services` | List of services that were active on the source system |
+| `packages` | Full installed package list (name + version) via `dpkg`, `rpm`, or `pacman` |
+| `files` | Per-file entry: absolute path, archive path, change status, mode (octal), owner, group, uid, gid, size, mtime, sha256 |
+
+The manifest is the "read this first" document for whoever deploys the archive on the target system. It tells them exactly what packages to install, what users to create, what services to enable, and how to verify the extraction.
 
 ---
 
@@ -253,35 +329,25 @@ Porter is the designated tool for building the `.tar.gz` deployment archives use
 ### Workflow
 
 1. Stand up a reference container and configure the application until it works correctly.
-2. Open porter with the reference container on the left pane, a new archive on the right.
-3. Browse the reference container's filesystem and select the config files that make the app work (`/etc/pihole/`, `/opt/pihole/`, etc.).
-4. Copy them into the archive — porter preserves full paths, permissions, and ownership.
-5. Porter generates a `labinator-manifest.yaml` sidecar for any custom users/groups and pre/post-extract commands.
-6. Save the archive to `~/projects/HomeLab/labinator/app-templates/pihole.tar.gz`.
-7. Every future deployment via labinator: install packages → extract archive → reboot → running.
+2. Open porter with the reference container on the left pane (via SFTP), a local directory on the right.
+3. Take a snapshot of the reference container's working directory.
+4. Use porter's file operations to collect the config files that make the app work (`/etc/pihole/`, `/opt/pihole/`, etc.) into the right pane.
+5. Build Archive from Diff — or manually copy files into a new archive — to produce a deployment package.
+6. Porter generates a `manifest.yaml` sidecar documenting permissions, ownership, installed packages, and active services.
+7. Save the archive to `~/projects/HomeLab/labinator/app-templates/`.
+8. Every future deployment via labinator: install packages → extract archive → enable services → running.
 
-### Archive Storage Layout
+### Permissions and ownership
 
-```
-labinator/
-└── app-templates/
-    ├── pihole.tar.gz
-    ├── pihole-manifest.yaml
-    ├── nginx-proxy-manager.tar.gz
-    ├── nginx-proxy-manager-manifest.yaml
-    └── vaultwarden.tar.gz
-```
-
-### Labinator Builder Mode
-
-`F11` switches the archive pane into labinator builder mode:
-- The manifest being built is shown alongside the file tree
-- Files already included in the archive are highlighted in the source pane
-- A summary panel shows archive name, package profile association, custom users, and post-extract commands
+`tarfile` preserves mode bits (chmod), uid, and gid natively. The uid/gid caveat: numeric IDs must match on the destination system. In the labinator workflow, packages are installed before archive extraction so system users already exist with correct IDs. Custom users are documented in the manifest's `local_users` section.
 
 ---
 
 ## Troubleshooting
+
+### "Porter venv not found" when running via symlink
+
+Run `./install.sh` again — it regenerates `porter.sh` with a symlink-safe path resolver. If you moved the porter directory after installing, re-run the installer to update the symlink.
 
 ### The terminal looks garbled or colors are wrong
 
@@ -310,42 +376,38 @@ Some SSH sessions strip the TERM variable. Add it to your `~/.bashrc` or `~/.zsh
 
 ### "Permission denied" when browsing remote files
 
-You are connecting as a user without read access to those paths. Options:
-- Connect as root if your SSH config allows it
-- Enable sudo-aware browsing for the connection in `~/.config/porter/sessions.yaml` (`sudo: true`)
+You are connecting as a user without read access to those paths. Connect as a user with appropriate access, or use `sudo` on the remote host to grant read permissions before connecting.
 
-### File copy fails or stalls
+### File copy fails with a permissions error
 
 - Check available disk space on the destination: `df -h`
-- For remote transfers, verify the SFTP subsystem is enabled on the remote host (`Subsystem sftp /usr/lib/openssh/sftp-server` in `/etc/ssh/sshd_config`)
-- Interrupted transfers can be retried from the transfer queue panel (`F12`)
+- Verify the SFTP subsystem is enabled on the remote host (`Subsystem sftp /usr/lib/openssh/sftp-server` in `/etc/ssh/sshd_config`)
+- Confirm you have write permission to the destination directory
 
 ### Archive opens but shows no files
 
-- The archive may be empty, or the format may not be supported
-- Verify the file is a valid archive: `file youarchive.tar.gz`
-- Try verifying integrity via right-click → **Verify Integrity**
+- The archive may be empty — this is expected for a newly created archive
+- Verify it is a valid archive: `file yourarchive.tar.gz`
+- Right-click → **Verify Integrity** to test without extracting
 
 ### Porter won't start — missing dependencies
 
 ```bash
-source .venv/bin/activate
-pip install -e .
+./install.sh
 ```
 
-If the venv does not exist yet, create it first:
+Or manually:
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-### F-keys don't work in my terminal
+### F-keys don't respond
 
-Some terminals (notably GNOME Terminal, certain SSH clients) intercept F-keys before they reach the application. Try:
-- Disabling terminal F-key shortcuts in your terminal's preferences
-- Using the context menu (backtick `` ` `` or right-click) as an alternative to F-keys
+Some terminals (notably GNOME Terminal, certain SSH clients) intercept F-keys before they reach the application. Options:
+- Disable terminal F-key shortcuts in your terminal's preferences
+- Use the context menu (backtick `` ` `` or right-click) as an alternative for all file operations
 
 ---
 
@@ -353,9 +415,9 @@ Some terminals (notably GNOME Terminal, certain SSH clients) intercept F-keys be
 
 Porter would not exist without the trail blazed by **Midnight Commander** (`mc`), written by **Miguel de Icaza** in 1994 and still going strong.
 
-`mc` defined what a terminal file manager should be: two panes, F-key operations, a bottom bar that tells you what every key does, and zero ceremony between you and your files. It set the standard that every tool in this space has measured itself against for thirty years. I used it constantly managing Linux servers before I ever thought about writing my own file manager, and the muscle memory is still there.
+`mc` defined what a terminal file manager should be: two panes, F-key operations, a bottom bar that tells you what every key does, and zero ceremony between you and your files. It set the standard that every tool in this space has measured itself against for thirty years. The F-key bar at the bottom, the dual-pane layout, the navigation model — none of that is accidental.
 
-Porter is not a fork of `mc` and shares no code with it — it's built from scratch in Python with Textual. But the design language, the workflow, the keybindings, the general philosophy that *a file manager should stay out of your way and let you work* — all of that comes directly from what Miguel built. The F-key bar at the bottom, the dual-pane layout, the mc-style navigation: none of that is accidental.
+Porter is not a fork of `mc` and shares no code with it — it's built from scratch in Python with Textual. But the design language, the workflow, the keybindings, the general philosophy that *a file manager should stay out of your way and let you work* — all of that comes directly from what Miguel built.
 
 Midnight Commander is released under the **GNU General Public License v3**. Porter is a spiritual successor, not a derivative work — but we acknowledge the lineage openly and with gratitude.
 
