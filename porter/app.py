@@ -699,8 +699,11 @@ class PorterApp(App):
             src = entries[0]
             dst = dst_dir / src.name
             msg = f"Copy [bold]{src.name}[/bold]\n  → {dst_dir}"
-            if dst.exists():
-                msg += f"\n\n[yellow]'{src.name}' already exists — overwrite?[/yellow]"
+            try:
+                if dst.exists():
+                    msg += f"\n\n[yellow]'{src.name}' already exists — overwrite?[/yellow]"
+            except OSError:
+                pass  # remote/archive path — skip exists check
         else:
             names = ", ".join(e.name for e in entries[:5])
             if len(entries) > 5:
@@ -866,8 +869,11 @@ class PorterApp(App):
             src = entries[0]
             dst = dst_dir / src.name
             msg = f"Move [bold]{src.name}[/bold]\n  → {dst_dir}"
-            if dst.exists():
-                msg += f"\n\n[yellow]'{src.name}' already exists — overwrite?[/yellow]"
+            try:
+                if dst.exists():
+                    msg += f"\n\n[yellow]'{src.name}' already exists — overwrite?[/yellow]"
+            except OSError:
+                pass  # remote/archive path — skip exists check
         else:
             names = ", ".join(e.name for e in entries[:5])
             if len(entries) > 5:

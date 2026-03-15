@@ -130,14 +130,19 @@ class FileTable(DataTable):
     # ── Event handlers ─────────────────────────────────────────────────────
 
     async def _on_click(self, event: events.Click) -> None:
-        """Single-click selects — fire RowSelected immediately on any row click."""
+        """Single-click moves cursor; right-click and archives skip activation."""
+        if event.button == 3:
+            return  # right-click handled by on_mouse_up
         meta = event.style.meta
         if "row" in meta and "column" in meta:
             row_index = meta["row"]
             is_header = self.show_header and row_index == -1
             if not is_header and self.show_cursor and self.cursor_type != "none":
                 self.cursor_coordinate = Coordinate(row_index, meta["column"])
-                self._post_selected_message()
+                # Archives require Enter/double-click to open; single-click just highlights
+                entry = self.current_entry()
+                if entry is None or not entry.is_archive:
+                    self._post_selected_message()
                 self._scroll_cursor_into_view(animate=True)
                 event.prevent_default()
                 event.stop()
