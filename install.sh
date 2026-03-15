@@ -113,7 +113,8 @@ fi
 section "Virtual environment"
 
 if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/python" ] && \
-   "$VENV_DIR/bin/python" -c "import sys" &>/dev/null; then
+   "$VENV_DIR/bin/python" -c "import sys" &>/dev/null && \
+   "$VENV_DIR/bin/pip" --version &>/dev/null; then
     info "Existing venv found at $VENV_DIR"
 else
     if [ -d "$VENV_DIR" ]; then
