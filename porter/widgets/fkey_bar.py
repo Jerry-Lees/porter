@@ -26,7 +26,6 @@ class FKeyBar(Widget):
             ("F8", "Del"),
             ("^N", "Archive"),
             ("^O", "Connect"),
-            (" .", "Hidden"),
             ("^Q", "Quit"),
         ]
         for key, label in keys:
