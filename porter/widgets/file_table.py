@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from rich.text import Text
@@ -56,6 +57,8 @@ class FileTable(DataTable):
         self._row_entries: dict[str, FileEntry | None] = {}
         self._current_row_key: str | None = _PARENT_KEY
         self._selected: set[str] = set()
+        self._last_click_time: float = 0.0
+        self._last_click_row: int = -1
 
     def on_mount(self) -> None:
         self.add_column("Name",     key="name",  width=30)
@@ -148,8 +151,10 @@ class FileTable(DataTable):
     # ── Event handlers ─────────────────────────────────────────────────────
 
     async def _on_click(self, event: events.Click) -> None:
-        """Single-click moves cursor; right-click and archives skip activation."""
+        """Single-click moves cursor only; double-click or Enter activates."""
         if event.button == 3:
+            event.prevent_default()
+            event.stop()
             return  # right-click handled by on_mouse_up
         meta = event.style.meta
         if "row" in meta and "column" in meta:
@@ -157,9 +162,14 @@ class FileTable(DataTable):
             is_header = self.show_header and row_index == -1
             if not is_header and self.show_cursor and self.cursor_type != "none":
                 self.cursor_coordinate = Coordinate(row_index, meta["column"])
-                # Archives require Enter/double-click to open; single-click just highlights
-                entry = self.current_entry()
-                if entry is None or not entry.is_archive:
+                now = time.monotonic()
+                is_double = (
+                    row_index == self._last_click_row
+                    and now - self._last_click_time < 0.4
+                )
+                self._last_click_time = now
+                self._last_click_row = row_index
+                if is_double:
                     self._post_selected_message()
                 self._scroll_cursor_into_view(animate=True)
                 event.prevent_default()
