@@ -112,9 +112,14 @@ fi
 
 section "Virtual environment"
 
-if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/python" ]; then
+if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/python" ] && \
+   "$VENV_DIR/bin/python" -c "import sys" &>/dev/null; then
     info "Existing venv found at $VENV_DIR"
 else
+    if [ -d "$VENV_DIR" ]; then
+        warn "Existing venv is broken (stale paths?) — recreating at $VENV_DIR"
+        rm -rf "$VENV_DIR"
+    fi
     info "Creating venv at $VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"
 fi
@@ -153,7 +158,7 @@ if [ ! -f "\$VENV_DIR/bin/activate" ]; then
 fi
 
 source "\$VENV_DIR/bin/activate"
-python -m porter "\$@"
+python3 -m porter "\$@"
 EXIT_CODE=\$?
 deactivate
 exit \$EXIT_CODE
