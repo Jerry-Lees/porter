@@ -490,6 +490,78 @@ labinator/
 
 ---
 
+## Filesystem Refresh
+
+### Auto-refresh and manual refresh
+
+Panes should support refreshing the file listing without losing the user's position or
+selections. Two modes are desirable:
+
+**Manual refresh** — `Ctrl+R` refreshes the active pane immediately. Already listed as a
+keybinding above; needs to be fully implemented.
+
+**Auto-refresh** — Optional periodic refresh (configurable interval, e.g. 5 seconds) so
+panes stay current when files change externally (rsync finishes, another terminal creates
+files, etc.).
+
+### Refresh must preserve state
+
+A refresh that forgets where the user is causes more frustration than no refresh at all.
+Any refresh — manual or automatic — must:
+
+- Keep the cursor on the same filename (scroll to it if necessary; fall back to nearest
+  item if the file was deleted)
+- Preserve the full selection set (files that were space-selected remain selected; remove
+  any that no longer exist)
+- Preserve the scroll position (if the cursor file is still visible, don't scroll)
+- Never interrupt an in-progress operation
+
+### Implementation notes
+
+- Reload the file listing from the filesystem backend; diff the new list against the
+  current rows; add/remove/update entries in-place rather than clearing and reloading
+- For auto-refresh, use a Textual timer (`set_interval`) per pane; timer is paused while
+  a modal dialog is open and while the pane is not the focused pane (to reduce overhead)
+- Auto-refresh interval should be configurable in `~/.config/porter/config.yaml`; default
+  off (user explicitly enables it)
+- Archive panes do not auto-refresh (archives are static until modified by porter itself)
+- SFTP panes auto-refresh only if the user explicitly enables it (SFTP `readdir` calls
+  add latency; noisy on slow links)
+
+---
+
+## Remote Archive Creation
+
+### Creating archives on remote systems
+
+Currently porter can only create archives on the local filesystem. A common sysadmin
+workflow is to snapshot files directly on a remote host into an archive and then pull
+the archive back — avoids downloading thousands of individual files over SFTP.
+
+### Desired workflow
+
+1. Navigate the right pane to a remote host (SSH/SFTP).
+2. Select files/directories in the remote pane.
+3. Press `^N` (or context menu → New Archive) — porter detects the destination is remote.
+4. Porter runs `tar czf /tmp/porter-temp.tar.gz <files>` on the remote host via
+   `paramiko exec_command`.
+5. Porter then downloads the resulting archive to the local pane (or leaves it in-place
+   if the destination pane is also remote).
+6. Cleanup: remove the temp archive from the remote host once downloaded.
+
+### Notes
+
+- For the diff/snapshot workflows (Build Archive from Diff), the snapshot walk happens
+  locally so remote archive creation doesn't apply there.
+- The remote `tar` binary must be available (standard on all Linux hosts).
+- Paths in the remote archive should be relative to the remote SFTP working directory,
+  not absolute, unless the user explicitly requests absolute paths (e.g. for system
+  snapshot style archives).
+- Progress should be shown — both for the `tar` execution on the remote side and for the
+  subsequent SFTP download.
+
+---
+
 ## Implementation Stack
 
 | Component | Library | Notes |
