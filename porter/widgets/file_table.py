@@ -114,6 +114,21 @@ class FileTable(DataTable):
                 result.append(entry)
         return result
 
+    def clear_selection(self) -> None:
+        """Deselect all selected entries and restore their normal row style."""
+        to_update = [(key, self._row_entries.get(key)) for key in self._selected]
+        self._selected.clear()
+        for key, entry in to_update:
+            if entry is not None:
+                self._update_row_style(key, entry)
+
+    def restore_selection(self, names: set[str]) -> None:
+        """Re-select rows whose name is in *names* (used after a partial failure)."""
+        for key, entry in self._row_entries.items():
+            if entry is not None and entry.name in names:
+                self._selected.add(key)
+                self._update_row_style(key, entry)
+
     def _update_row_style(self, key: str, entry: FileEntry) -> None:
         """Re-render the name cell to reflect selected/unselected state."""
         if key in self._selected:

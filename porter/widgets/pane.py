@@ -99,6 +99,12 @@ class FilePane(Widget):
     def refresh_listing(self) -> None:
         self._refresh()
 
+    def clear_selection(self) -> None:
+        self.query_one(FileTable).clear_selection()
+
+    def restore_selection(self, names: set[str]) -> None:
+        self.query_one(FileTable).restore_selection(names)
+
     @property
     def cwd(self) -> Path:
         return self._cwd

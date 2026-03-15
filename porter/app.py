@@ -846,6 +846,7 @@ class PorterApp(App):
             if errors:
                 self.notify("Copy errors:\n" + "\n".join(errors), severity="error", timeout=8)
             else:
+                active_pane.clear_selection()
                 n = len(entries)
                 self.notify(f"Copied {n} item{'s' if n > 1 else ''}")
 
@@ -1045,7 +1046,10 @@ class PorterApp(App):
 
             active_pane.refresh_listing()
             inactive.refresh_listing()
+            active_pane.refresh_listing()
             if errors:
+                failed = {e.name for e in entries if any(e.name in err for err in errors)}
+                active_pane.restore_selection(failed)
                 self.notify("Move errors:\n" + "\n".join(errors), severity="error", timeout=8)
             else:
                 n = len(entries)
@@ -1116,6 +1120,8 @@ class PorterApp(App):
                     errors.append(f"{entry.name}: {e}")
             pane.refresh_listing()
             if errors:
+                failed = {e.name for e in entries if any(e.name in err for err in errors)}
+                pane.restore_selection(failed)
                 self.notify("Delete errors:\n" + "\n".join(errors), severity="error", timeout=8)
             else:
                 n = len(entries)
