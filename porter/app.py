@@ -203,6 +203,7 @@ from porter.widgets.confirm_dialog import ConfirmDialog, InputDialog, SnapshotDi
 from porter.widgets.connect_dialog import ConnectDialog
 from porter.widgets.context_menu import ContextMenu
 from porter.widgets.fkey_bar import FKeyBar
+from porter.widgets.help_screen import HelpScreen
 from porter.widgets.jump_bar import JumpScreen
 from porter.widgets.pane import FilePane
 from porter.widgets.viewer import ViewerScreen
@@ -225,13 +226,14 @@ class PorterApp(App):
         Binding("f6",  "move_file",     "Move",    show=False, priority=True),
         Binding("f7",  "mkdir",         "MkDir",   show=False, priority=True),
         Binding("f8",  "delete_file",   "Delete",  show=False, priority=True),
-        Binding("ctrl+h", "toggle_hidden",  "Hidden",  show=False, priority=True),
-        Binding("ctrl+r", "refresh_pane",   "Refresh", show=False, priority=True),
-        Binding("alt+left", "go_back",      "Back",    show=False, priority=True),
+        Binding("f1",     "help",          "Help",    show=False, priority=True),
+        Binding("full_stop", "toggle_hidden", "Hidden",  show=False, priority=True),
+        Binding("ctrl+r", "refresh_pane",  "Refresh", show=False, priority=True),
+        Binding("alt+left", "go_back",     "Back",    show=False, priority=True),
         Binding("grave_accent", "context_menu", "Menu", show=False, priority=True),
-        Binding("ctrl+o", "connect", "Connect", show=False, priority=True),
+        Binding("ctrl+o", "connect",     "Connect",     show=False, priority=True),
         Binding("ctrl+n", "new_archive", "New Archive", show=False, priority=True),
-        Binding("ctrl+q", "quit",       "Quit",    show=False, priority=True),
+        Binding("ctrl+q", "quit",        "Quit",        show=False, priority=True),
     ]
 
     def __init__(self) -> None:
@@ -286,6 +288,9 @@ class PorterApp(App):
             self.action_jump()
 
     # ── Actions ────────────────────────────────────────────────────────────
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
 
     def action_toggle_hidden(self) -> None:
         self._active_pane().toggle_hidden()

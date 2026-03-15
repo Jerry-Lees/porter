@@ -188,6 +188,12 @@ class FileTable(DataTable):
         if event.key == "backspace":
             event.stop()
             self.post_message(self.NavigateUp())
+        elif event.key == "f1":
+            event.stop()
+            self.app.action_help()
+        elif event.character == "." or event.key in ("period", "full_stop"):
+            event.stop()
+            self.app.action_toggle_hidden()
         elif event.key == "grave_accent":
             event.stop()
             self.post_message(self.ContextMenuRequested(self.current_entry(), 4, 4))
