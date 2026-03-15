@@ -150,8 +150,16 @@ class FileTable(DataTable):
 
     # ── Event handlers ─────────────────────────────────────────────────────
 
+    def _activate_parent_pane(self) -> None:
+        """Tell the app to make our parent pane the active one."""
+        pane = self.parent
+        if pane is not None and hasattr(pane, "id") and pane.id:
+            side = "left" if "left" in pane.id else "right"
+            self.app._activate_pane(side)
+
     async def _on_click(self, event: events.Click) -> None:
         """Single-click moves cursor only; double-click or Enter activates."""
+        self._activate_parent_pane()
         if event.button == 3:
             event.prevent_default()
             event.stop()
