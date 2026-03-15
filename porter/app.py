@@ -279,6 +279,9 @@ class PorterApp(App):
     # ── Key handling ───────────────────────────────────────────────────────
 
     def on_key(self, event: events.Key) -> None:
+        from textual.screen import ModalScreen
+        if isinstance(self.screen, ModalScreen):
+            return  # let modals handle their own keys
         if event.key == "tab":
             event.stop()
             event.prevent_default()
