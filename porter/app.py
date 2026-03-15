@@ -485,23 +485,35 @@ class PorterApp(App):
 
     def action_snapshot(self) -> None:
         """Record current state of the active pane's directory for later diff."""
+        import threading
         pane = self._active_pane()
         if not isinstance(pane.fs, LocalFilesystem):
             self.notify("Snapshot only supported on local filesystem", severity="warning")
             return
         base = pane.cwd
-        snap: dict[str, tuple[float, int, int, int, int]] = {}
-        for p in base.rglob("*"):
-            if p.is_file():
-                try:
-                    st = p.stat()
-                    snap[str(p.relative_to(base))] = (
-                        st.st_mtime, st.st_size, st.st_mode, st.st_uid, st.st_gid
-                    )
-                except OSError:
-                    pass
-        self._snapshots[self._active_side] = (base, snap, set(), set())
-        self.notify(f"Snapshot: {len(snap)} files in {base.name}/")
+        side = self._active_side
+        self._set_fkey_status(f"Snapshot: {base.name}/…")
+
+        def _walk() -> None:
+            snap: dict[str, tuple[float, int, int, int, int]] = {}
+            for p in base.rglob("*"):
+                if p.is_file():
+                    try:
+                        st = p.stat()
+                        snap[str(p.relative_to(base))] = (
+                            st.st_mtime, st.st_size, st.st_mode, st.st_uid, st.st_gid
+                        )
+                    except OSError:
+                        pass
+
+            def _done() -> None:
+                self._snapshots[side] = (base, snap, set(), set())
+                self._set_fkey_status(f"Snapshot: {len(snap):,} files")
+                self.notify(f"Snapshot: {len(snap):,} files in {base.name}/")
+
+            self.call_from_thread(_done)
+
+        threading.Thread(target=_walk, daemon=True, name="porter-snapshot").start()
 
     def action_system_snapshot(self) -> None:
         """Take a system-wide snapshot from / in a background thread."""
