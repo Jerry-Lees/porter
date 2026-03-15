@@ -10,7 +10,7 @@ if [ ! -f "$VENV_DIR/bin/activate" ]; then
 fi
 
 source "$VENV_DIR/bin/activate"
-python -m porter "$@"
+python3 -m porter "$@"
 EXIT_CODE=$?
 deactivate
 exit $EXIT_CODE
