@@ -171,7 +171,10 @@ class ArchiveFilesystem(Filesystem):
             self._zip_extract(member_name, dst_dir)
 
     def _norm_tar(self, name: str) -> str:
-        return name.lstrip("./")
+        """Strip leading './' sequences only — preserves dotfile names like .gitignore."""
+        while name.startswith("./"):
+            name = name[2:]
+        return name
 
     def _tar_extract(self, member_name: str, dst_dir: Path) -> None:
         out_name = Path(member_name).name
@@ -269,16 +272,23 @@ class ArchiveFilesystem(Filesystem):
                     zf.write(str(src), self._arcname(prefix, src))
 
     def remove_member(self, virtual_path: Path) -> None:
-        """Remove a member from the archive (requires full repack for compressed tar)."""
-        member_name = self._virtual_to_member(virtual_path)
+        """Remove a single member from the archive."""
+        self.remove_members([virtual_path])
+
+    def remove_members(self, virtual_paths: list[Path]) -> None:
+        """Remove multiple members in a single repack pass."""
+        names = {self._virtual_to_member(p) for p in virtual_paths}
         if self._is_tar():
-            self._tar_remove(member_name)
+            self._tar_remove_many(names)
         else:
-            self._zip_remove(member_name)
+            self._zip_remove_many(names)
         self._root = _Node(name="", is_dir=True)
         self._load()
 
     def _tar_remove(self, member_name: str) -> None:
+        self._tar_remove_many({member_name})
+
+    def _tar_remove_many(self, member_names: set[str]) -> None:
         tmp_fd, tmp_name = tempfile.mkstemp(suffix=self._archive_path.suffix)
         tmp = Path(tmp_name)
         try:
@@ -286,7 +296,7 @@ class ArchiveFilesystem(Filesystem):
                   tarfile.open(tmp, self._tar_mode("w")) as dst_tf):
                 for m in src_tf.getmembers():
                     norm = self._norm_tar(m.name)
-                    if norm == member_name or norm.startswith(member_name + "/"):
+                    if any(norm == n or norm.startswith(n + "/") for n in member_names):
                         continue
                     fobj = src_tf.extractfile(m) if m.isfile() else None
                     dst_tf.addfile(m, fobj)
@@ -296,6 +306,9 @@ class ArchiveFilesystem(Filesystem):
             raise
 
     def _zip_remove(self, member_name: str) -> None:
+        self._zip_remove_many({member_name})
+
+    def _zip_remove_many(self, member_names: set[str]) -> None:
         tmp_fd, tmp_name = tempfile.mkstemp(suffix=".zip")
         tmp = Path(tmp_name)
         try:
@@ -303,7 +316,7 @@ class ArchiveFilesystem(Filesystem):
                   zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as dst_zf):
                 for info in src_zf.infolist():
                     norm = info.filename.rstrip("/")
-                    if norm == member_name or norm.startswith(member_name + "/"):
+                    if any(norm == n or norm.startswith(n + "/") for n in member_names):
                         continue
                     dst_zf.writestr(info, src_zf.read(info.filename))
             shutil.move(str(tmp), str(self._archive_path))

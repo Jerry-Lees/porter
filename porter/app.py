@@ -849,9 +849,13 @@ class PorterApp(App):
 
             inactive.refresh_listing()
             if errors:
+                failed = {e.name for e in entries if any(e.name in err for err in errors)}
+                active_pane.restore_selection(failed)
                 self.notify("Copy errors:\n" + "\n".join(errors), severity="error", timeout=8)
             else:
-                active_pane.clear_selection()
+                active_pane.refresh_listing()
+                if any(e.name.startswith(".") for e in entries):
+                    inactive.enable_hidden()
                 n = len(entries)
                 self.notify(f"Copied {n} item{'s' if n > 1 else ''}")
 
@@ -1057,6 +1061,8 @@ class PorterApp(App):
                 active_pane.restore_selection(failed)
                 self.notify("Move errors:\n" + "\n".join(errors), severity="error", timeout=8)
             else:
+                if any(e.name.startswith(".") for e in entries):
+                    inactive.enable_hidden()
                 n = len(entries)
                 self.notify(f"Moved {n} item{'s' if n > 1 else ''}")
 
@@ -1111,18 +1117,26 @@ class PorterApp(App):
             if not confirmed:
                 return
             errors = []
-            for entry in entries:
+            if isinstance(pane.fs, ArchiveFilesystem):
                 try:
-                    if isinstance(pane.fs, ArchiveFilesystem):
-                        pane.fs.remove_member(entry.path)
-                    elif isinstance(pane.fs, SFTPFilesystem):
-                        pane.fs.remove(entry.path)
-                    elif entry.is_dir:
-                        shutil.rmtree(str(entry.path))
-                    else:
-                        entry.path.unlink()
+                    pane.fs.remove_members([e.path for e in entries])
                 except Exception as e:
-                    errors.append(f"{entry.name}: {e}")
+                    errors.extend(f"{entry.name}: {e}" for entry in entries)
+            elif isinstance(pane.fs, SFTPFilesystem):
+                for entry in entries:
+                    try:
+                        pane.fs.remove(entry.path)
+                    except Exception as e:
+                        errors.append(f"{entry.name}: {e}")
+            else:
+                for entry in entries:
+                    try:
+                        if entry.is_dir:
+                            shutil.rmtree(str(entry.path))
+                        else:
+                            entry.path.unlink()
+                    except Exception as e:
+                        errors.append(f"{entry.name}: {e}")
             pane.refresh_listing()
             if errors:
                 failed = {e.name for e in entries if any(e.name in err for err in errors)}

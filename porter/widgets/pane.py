@@ -99,6 +99,12 @@ class FilePane(Widget):
     def refresh_listing(self) -> None:
         self._refresh()
 
+    def enable_hidden(self) -> None:
+        """Turn on hidden-file display if not already on, then refresh."""
+        if not self._show_hidden:
+            self._show_hidden = True
+            self._refresh()
+
     def clear_selection(self) -> None:
         self.query_one(FileTable).clear_selection()
 

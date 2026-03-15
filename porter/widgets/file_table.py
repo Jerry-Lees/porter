@@ -140,7 +140,10 @@ class FileTable(DataTable):
             name_text = Text(entry.name, style="bold yellow")
         else:
             name_text = Text(entry.name)
-        self.update_cell(key, "name", name_text)
+        try:
+            self.update_cell(key, "name", name_text)
+        except Exception:
+            pass
 
     # ── Event handlers ─────────────────────────────────────────────────────
 
