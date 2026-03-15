@@ -562,6 +562,33 @@ the archive back — avoids downloading thousands of individual files over SFTP.
 
 ---
 
+## Polish / Future Improvements
+
+Items identified during testing that are not blocking but worth addressing:
+
+### Pane auto-refresh on external changes
+Currently the pane listing only updates when you navigate away and back, or when porter
+itself performs an operation. Files created or modified by external processes (other
+terminals, background daemons, etc.) don't appear until a manual refresh (`Ctrl+R`) or
+navigation. A filesystem watcher (inotify on Linux) watching the active pane's directory
+would solve this and make the pane feel live.
+
+### Permission-gated paths silently skipped in snapshots
+When porter runs as a regular user, directories like `/root` (mode 700) are skipped by
+`os.walk` without any indication. This means files in those paths will never appear in
+a diff even if changed. Options:
+- Show a warning count in the diff dialog ("N paths skipped — permission denied")
+- Document the limitation clearly in the snapshot dialog
+
+### Directory snapshot exclusion dialog
+The system snapshot (`Right-click → System Snapshot`) shows a full exclusion dialog with
+NFS mount detection. The directory snapshot (`Right-click → Take Snapshot`) snapshots
+immediately with no options. For large directories (e.g. a home directory with Steam
+game files), this could be slow or include unwanted paths. Consider adding a lightweight
+exclusion dialog for the directory snapshot as well.
+
+---
+
 ## Implementation Stack
 
 | Component | Library | Notes |
