@@ -4,9 +4,24 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ListView, ListItem
+from textual.widgets import Button, Checkbox, Input, Label, ListView, ListItem
+
+
+def _detect_nfs_mounts() -> list[str]:
+    """Return mount points of NFS/CIFS/other remote filesystems from /proc/mounts."""
+    remote_types = {"nfs", "nfs4", "cifs", "smbfs", "fuse.sshfs", "fuse.s3fs", "fuse.glusterfs"}
+    mounts = []
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3 and parts[2].lower() in remote_types:
+                    mounts.append(parts[1])
+    except OSError:
+        pass
+    return sorted(mounts)
 
 
 class ConfirmDialog(ModalScreen[bool]):
@@ -67,6 +82,59 @@ class ConfirmDialog(ModalScreen[bool]):
 
     def action_no(self) -> None:
         self.dismiss(False)
+
+
+class InfoDialog(ModalScreen[None]):
+    """Simple informational popup — press Enter/Escape/OK to dismiss."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_dialog", "OK", priority=True),
+        Binding("enter",  "dismiss_dialog", "OK", priority=True),
+    ]
+
+    DEFAULT_CSS = """
+    InfoDialog {
+        align: center middle;
+    }
+    InfoDialog > Vertical {
+        width: 70;
+        height: auto;
+        border: thick $success;
+        background: $surface;
+        padding: 1 2;
+    }
+    InfoDialog Label {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    InfoDialog Horizontal {
+        width: 100%;
+        height: auto;
+        align: right middle;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, title: str, message: str) -> None:
+        super().__init__()
+        self._title = title
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(f"[bold]{self._title}[/bold]")
+            yield Label(self._message)
+            with Horizontal():
+                yield Button("OK", id="ok", variant="success")
+
+    def on_mount(self) -> None:
+        self.query_one("#ok", Button).focus()
+
+    def on_button_pressed(self, _: Button.Pressed) -> None:
+        self.dismiss(None)
+
+    def action_dismiss_dialog(self) -> None:
+        self.dismiss(None)
 
 
 class InputDialog(ModalScreen[str | None]):
@@ -205,11 +273,20 @@ class SystemSnapshotDialog(ModalScreen[list[str] | None]):
         "/proc", "/sys", "/dev", "/run", "/tmp",
         "/var/tmp", "/var/log", "/var/cache", "/var/run",
         "/snap", "/mnt", "/media",
+        # Always-changing runtime state — never meaningful for deployment diffs
+        "/var/lib/systemd/timesync",    # clock file updated constantly
+        "/var/lib/systemd/random-seed", # regenerated on boot
+        "/var/lib/logrotate",           # rotated on schedule
+        "/var/lib/apt/lists",           # package index cache
+        "/var/lib/dpkg/triggers",       # dpkg trigger state
+        "/var/lib/NetworkManager",      # connection runtime state
     ]
 
     # Directory name patterns — skipped wherever they appear in the tree
     DEFAULT_EXCLUDED_NAMES: list[str] = [
         ".git", "__pycache__", "node_modules", ".venv", ".cache",
+        "Steam", "steamapps",          # Steam game files
+        "snap",                         # snap package data in home dirs
     ]
 
     DEFAULT_CSS = """
@@ -248,22 +325,37 @@ class SystemSnapshotDialog(ModalScreen[list[str] | None]):
     SystemSnapshotDialog Horizontal.buttons Button {
         margin-left: 1;
     }
+    SystemSnapshotDialog #nfs-list {
+        height: 4;
+        border: solid $accent-darken-2;
+        background: $surface-darken-1;
+        margin-bottom: 1;
+        padding: 0 1;
+    }
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._custom: list[str] = []
+        self._nfs_mounts: list[str] = _detect_nfs_mounts()
 
     def compose(self) -> ComposeResult:
         paths_str = "  ".join(self.DEFAULT_EXCLUDED_PATHS)
         names_str = "  ".join(self.DEFAULT_EXCLUDED_NAMES)
         with Vertical():
             yield Label("[bold]System Snapshot[/bold] — indexes every file from /")
-            yield Label("This may take 15–30 seconds on a typical system.", classes="section")
             yield Label("Excluded path prefixes (entire subtree skipped):", classes="section")
             yield Label(f"  {paths_str}")
             yield Label("Excluded directory names (skipped anywhere in tree):", classes="section")
             yield Label(f"  {names_str}")
+            yield Checkbox("Exclude NFS/remote mounts (recommended)", value=True, id="excl-nfs")
+            yield Label("NFS/remote mounts found:", classes="section")
+            with VerticalScroll(id="nfs-list"):
+                if self._nfs_mounts:
+                    for mount in self._nfs_mounts:
+                        yield Label(mount)
+                else:
+                    yield Label("(none detected)")
             yield Label("Add custom exclusion (full path or directory name):", classes="section")
             with Horizontal(id="add-row"):
                 yield Input(placeholder="/path/to/skip  or  dirname", id="excl-input")
@@ -298,9 +390,12 @@ class SystemSnapshotDialog(ModalScreen[list[str] | None]):
         self.query_one("#excl-input", Input).clear()
 
     def _submit(self) -> None:
-        self.dismiss(
-            self.DEFAULT_EXCLUDED_PATHS + self.DEFAULT_EXCLUDED_NAMES + self._custom
-        )
+        excl = list(self.DEFAULT_EXCLUDED_PATHS)
+        if self.query_one("#excl-nfs", Checkbox).value:
+            excl.extend(self._nfs_mounts)
+        excl.extend(self.DEFAULT_EXCLUDED_NAMES)
+        excl.extend(self._custom)
+        self.dismiss(excl)
 
     def action_cancel(self) -> None:
         self.dismiss(None)

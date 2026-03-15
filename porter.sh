@@ -13,4 +13,10 @@ source "$VENV_DIR/bin/activate"
 python3 -m porter "$@"
 EXIT_CODE=$?
 deactivate
+
+# Restore terminal — reset raw mode, echo, and mouse tracking that Textual may have
+# left enabled after a SIGKILL or crash. No-op when porter exits cleanly.
+stty sane
+printf '\033[?1000l\033[?1002l\033[?1003l\033[?1006l'
+
 exit $EXIT_CODE

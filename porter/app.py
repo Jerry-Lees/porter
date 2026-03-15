@@ -199,7 +199,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual import events
 
-from porter.widgets.confirm_dialog import ConfirmDialog, InputDialog, SnapshotDiffDialog, SystemSnapshotDialog
+from porter.widgets.confirm_dialog import ConfirmDialog, InfoDialog, InputDialog, SnapshotDiffDialog, SystemSnapshotDialog
 from porter.widgets.connect_dialog import ConnectDialog
 from porter.widgets.context_menu import ContextMenu
 from porter.widgets.fkey_bar import FKeyBar
@@ -240,7 +240,8 @@ class PorterApp(App):
         super().__init__()
         self._active_side: str = "left"
         # snapshot state: pane_id → (base_dir, {rel_path: (mtime, size, mode, uid, gid)})
-        self._snapshots: dict[str, tuple[Path, dict[str, tuple[float, int, int, int, int]]]] = {}
+        # (base_dir, file_stat_dict, excl_paths, excl_names)
+        self._snapshots: dict[str, tuple[Path, dict[str, tuple[float, int, int, int, int]], set[str], set[str]]] = {}
 
     # ── Layout ─────────────────────────────────────────────────────────────
 
@@ -275,6 +276,13 @@ class PorterApp(App):
     def _switch_pane(self) -> None:
         other = "right" if self._active_side == "left" else "left"
         self._activate_pane(other)
+
+    def _set_fkey_status(self, text: str) -> None:
+        """Update the right-justified status text in the FKeyBar."""
+        try:
+            self.query_one(FKeyBar).status = text
+        except Exception:
+            pass
 
     # ── Key handling ───────────────────────────────────────────────────────
 
@@ -492,7 +500,7 @@ class PorterApp(App):
                     )
                 except OSError:
                     pass
-        self._snapshots[self._active_side] = (base, snap)
+        self._snapshots[self._active_side] = (base, snap, set(), set())
         self.notify(f"Snapshot: {len(snap)} files in {base.name}/")
 
     def action_system_snapshot(self) -> None:
@@ -508,14 +516,18 @@ class PorterApp(App):
             excl_names = {e for e in exclusions if not e.startswith("/")}
             side = self._active_side
 
-            self.notify("Snapshotting system from / — please wait…", timeout=120)
+            self.notify("Snapshotting system from / — please wait…", timeout=8)
 
             def _on_complete(snap: dict) -> None:
-                self._snapshots[side] = (Path("/"), snap)
+                self._snapshots[side] = (Path("/"), snap, excl_paths, excl_names)
+                self._set_fkey_status(f"Snapshot: {len(snap):,} files")
                 self.notify(f"System snapshot complete: {len(snap):,} files indexed")
 
             def _walk() -> None:
+                import threading
                 snap: dict[str, tuple[float, int, int, int, int]] = {}
+                scanned = 0
+                last_notify = time.monotonic()
                 for dirpath, dirnames, filenames in os.walk(
                     "/", topdown=True, followlinks=False
                 ):
@@ -524,8 +536,23 @@ class PorterApp(App):
                         d for d in dirnames
                         if str(dp / d) not in excl_paths and d not in excl_names
                     ]
+                    self.call_from_thread(
+                        self._set_fkey_status,
+                        f"Snapshot: {dirpath}",
+                    )
                     for filename in filenames:
                         p = dp / filename
+                        scanned += 1
+                        if scanned % 200 == 0:
+                            threading.Event().wait(0.001)  # yield GIL
+                        now = time.monotonic()
+                        if now - last_notify >= 5.0:
+                            last_notify = now
+                            self.call_from_thread(
+                                self.notify,
+                                f"Snapshotting… {scanned:,} files indexed",
+                                timeout=6,
+                            )
                         try:
                             st = p.stat()
                             snap[str(p.relative_to(Path("/")))] = (
@@ -542,6 +569,8 @@ class PorterApp(App):
 
     def action_build_archive_from_diff(self) -> None:
         """Compare current directory against snapshot and build a tar.gz of changes."""
+        import threading
+
         side = self._active_side
         pane = self._active_pane()
         if side not in self._snapshots:
@@ -551,45 +580,89 @@ class PorterApp(App):
         if not isinstance(pane.fs, LocalFilesystem):
             self.notify("Diff only supported on local filesystem", severity="warning")
             return
-        base, snap = self._snapshots[side]
-        # Note: base may be "/" for system snapshots — no pane.cwd check needed
+        base, snap, excl_paths, excl_names = self._snapshots[side]
 
-        changed: list[tuple[str, str]] = []   # (status, rel_path)
-        changed_paths: list[Path] = []
-        for dirpath, dirnames, filenames in os.walk(str(base), topdown=True, followlinks=False):
-            dp = Path(dirpath)
-            # Prune directories that were excluded at snapshot time from the diff walk too
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
-            for filename in sorted(filenames):
-                p = dp / filename
-                try:
-                    rel = str(p.relative_to(base))
-                    st = p.stat()
-                    if rel not in snap:
-                        changed.append(("NEW", rel))
-                        changed_paths.append(p)
-                    elif (st.st_mtime, st.st_size, st.st_mode, st.st_uid, st.st_gid) != snap[rel]:
-                        changed.append(("MOD", rel))
-                        changed_paths.append(p)
-                except OSError:
-                    pass
+        # Fall back to defaults if snapshot was taken before excl sets were stored
+        if not excl_paths and not excl_names:
+            from porter.widgets.confirm_dialog import SystemSnapshotDialog as _SSD
+            excl_paths = set(_SSD.DEFAULT_EXCLUDED_PATHS)
+            excl_names = set(_SSD.DEFAULT_EXCLUDED_NAMES)
 
-        if not changed:
-            self.notify("No changes detected since snapshot")
-            return
+        self.notify("Scanning for changes…", timeout=30)
 
-        base_label = str(base)
-        default_name = f"{base.name or 'system'}-changes.tar.gz"
+        def _diff_walk() -> None:
+            import threading
+            changed: list[tuple[str, str]] = []
+            changed_paths: list[Path] = []
+            scanned = 0
+            last_notify = time.monotonic()
 
-        def do_build(archive_name: str | None) -> None:
-            if not archive_name:
+            for dirpath, dirnames, filenames in os.walk(str(base), topdown=True, followlinks=False):
+                dp = Path(dirpath)
+                dirnames[:] = sorted(
+                    d for d in dirnames
+                    if str(dp / d) not in excl_paths and d not in excl_names
+                    and not d.startswith(".")
+                )
+                self.call_from_thread(self._set_fkey_status, f"Diff: {dirpath}")
+                for filename in filenames:
+                    p = dp / filename
+                    scanned += 1
+                    if scanned % 200 == 0:
+                        threading.Event().wait(0.001)  # yield GIL
+                    now = time.monotonic()
+                    if now - last_notify >= 5.0:
+                        last_notify = now
+                        self.call_from_thread(
+                            self.notify,
+                            f"Scanning… {scanned:,} files checked, {len(changed_paths)} changed",
+                            timeout=6,
+                        )
+                    try:
+                        rel = str(p.relative_to(base))
+                        st = p.stat()
+                        if rel not in snap:
+                            changed.append(("NEW", rel))
+                            changed_paths.append(p)
+                        elif (st.st_mtime, st.st_size, st.st_mode, st.st_uid, st.st_gid) != snap[rel]:
+                            changed.append(("MOD", rel))
+                            changed_paths.append(p)
+                    except OSError:
+                        pass
+
+            self.call_from_thread(_show_dialog, changed, changed_paths)
+
+        def _show_dialog(changed: list[tuple[str, str]], changed_paths: list[Path]) -> None:
+            self._set_fkey_status(f"Snapshot: {len(snap):,} files")
+            if not changed:
+                self.notify("No changes detected since snapshot")
                 return
+            base_label = str(base)
+            default_name = f"{base.name or 'system'}-changes.tar.gz"
+
+            def do_build(archive_name: str | None) -> None:
+                if not archive_name:
+                    return
+                threading.Thread(
+                    target=_build_archive,
+                    args=(archive_name, changed, changed_paths),
+                    daemon=True,
+                    name="porter-diff-build",
+                ).start()
+
+            self.push_screen(SnapshotDiffDialog(changed, default_name, base=base_label), do_build)
+
+        def _build_archive(
+            archive_name: str,
+            changed: list[tuple[str, str]],
+            changed_paths: list[Path],
+        ) -> None:
             known_exts = (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar", ".zip")
             if not any(archive_name.lower().endswith(ext) for ext in known_exts):
                 archive_name += ".tar.gz"
             target = self._inactive_pane().cwd / archive_name
             try:
-                self.notify("Building manifest…", timeout=60)
+                self.call_from_thread(self._set_fkey_status, "Building archive…")
                 manifest_bytes = _build_manifest(base, changed, changed_paths)
 
                 n = archive_name.lower()
@@ -597,7 +670,6 @@ class PorterApp(App):
                     import zipfile
                     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                         for p in changed_paths:
-                            # Store with absolute path so extraction to / is correct
                             zf.write(str(p), str(p).lstrip("/"))
                         zf.writestr("manifest.yaml", manifest_bytes.decode("utf-8"))
                 else:
@@ -619,12 +691,24 @@ class PorterApp(App):
                         minfo.mode = 0o644
                         tf.addfile(minfo, io.BytesIO(manifest_bytes))
 
-                self._inactive_pane().refresh_listing()
-                self.notify(f"Created {archive_name} ({len(changed_paths)} files + manifest)")
+                def _done() -> None:
+                    self._inactive_pane().refresh_listing()
+                    dest = self._inactive_pane().cwd / archive_name
+                    def _on_confirmed(_) -> None:
+                        self._set_fkey_status("")
+                    self.push_screen(
+                        InfoDialog(
+                            "Archive Created",
+                            f"[bold]{archive_name}[/bold]\n\nSaved to: {dest}\n\n"
+                            f"{len(changed_paths)} file(s) + manifest.yaml",
+                        ),
+                        _on_confirmed,
+                    )
+                self.call_from_thread(_done)
             except Exception as e:
-                self.notify(f"Build failed: {e}", severity="error")
+                self.call_from_thread(self.notify, f"Build failed: {e}", severity="error")
 
-        self.push_screen(SnapshotDiffDialog(changed, default_name, base=base_label), do_build)
+        threading.Thread(target=_diff_walk, daemon=True, name="porter-diff-walk").start()
 
     def action_jump(self) -> None:
         pane = self._active_pane()

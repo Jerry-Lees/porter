@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from rich.text import Text
+from textual.reactive import reactive
 from textual.widget import Widget
+
 
 class FKeyBar(Widget):
     DEFAULT_CSS = """
@@ -13,6 +15,8 @@ class FKeyBar(Widget):
         background: $panel-darken-1;
     }
     """
+
+    status: reactive[str] = reactive("")
 
     def render(self) -> Text:
         text = Text(no_wrap=True, overflow="ellipsis")
@@ -31,4 +35,13 @@ class FKeyBar(Widget):
         for key, label in keys:
             text.append(f" {key} ", style="bold black on #5f87af")
             text.append(f"{label} ", style="white on #005f87")
+
+        if self.status:
+            status_plain = f" {self.status} "
+            keys_width = len(text.plain)
+            pad = self.size.width - keys_width - len(status_plain)
+            if pad > 0:
+                text.append(" " * pad, style="white on #005f87")
+            text.append(status_plain, style="bold white on dark_red")
+
         return text
