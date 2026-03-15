@@ -246,7 +246,8 @@ class ArchiveFilesystem(Filesystem):
                 with (tarfile.open(self._archive_path, self._tar_mode("r")) as src_tf,
                       tarfile.open(tmp, self._tar_mode("w")) as dst_tf):
                     for m in src_tf.getmembers():
-                        dst_tf.addfile(m, src_tf.extractfile(m))
+                        fobj = src_tf.extractfile(m) if m.isfile() else None
+                        dst_tf.addfile(m, fobj)
                     for src in src_paths:
                         dst_tf.add(str(src), arcname=self._arcname(prefix, src),
                                    recursive=src.is_dir())
@@ -287,7 +288,8 @@ class ArchiveFilesystem(Filesystem):
                     norm = self._norm_tar(m.name)
                     if norm == member_name or norm.startswith(member_name + "/"):
                         continue
-                    dst_tf.addfile(m, src_tf.extractfile(m))
+                    fobj = src_tf.extractfile(m) if m.isfile() else None
+                    dst_tf.addfile(m, fobj)
             shutil.move(str(tmp), str(self._archive_path))
         except Exception:
             tmp.unlink(missing_ok=True)
@@ -336,7 +338,8 @@ class ArchiveFilesystem(Filesystem):
                 with (tarfile.open(self._archive_path, self._tar_mode("r")) as src_tf,
                       tarfile.open(tmp, self._tar_mode("w")) as dst_tf):
                     for m in src_tf.getmembers():
-                        dst_tf.addfile(m, src_tf.extractfile(m))
+                        fobj = src_tf.extractfile(m) if m.isfile() else None
+                        dst_tf.addfile(m, fobj)
                     info = tarfile.TarInfo(name=member_name)
                     info.type = tarfile.DIRTYPE
                     info.mode = 0o755
@@ -375,7 +378,7 @@ class ArchiveFilesystem(Filesystem):
                         m.name = new_member
                     elif norm.startswith(old_member + "/"):
                         m.name = new_member + norm[len(old_member):]
-                    fobj = src_tf.extractfile(m) if not m.isdir() else None
+                    fobj = src_tf.extractfile(m) if m.isfile() else None
                     dst_tf.addfile(m, fobj)
             shutil.move(str(tmp), str(self._archive_path))
         except Exception:
@@ -426,7 +429,7 @@ class ArchiveFilesystem(Filesystem):
                         dst_tf.add(str(new_real_path), arcname=m.name)
                         replaced = True
                     else:
-                        fobj = src_tf.extractfile(m) if not m.isdir() else None
+                        fobj = src_tf.extractfile(m) if m.isfile() else None
                         dst_tf.addfile(m, fobj)
                 if not replaced:
                     dst_tf.add(str(new_real_path), arcname=member_name)
